@@ -3,7 +3,6 @@ package jp.dopaccess.widget.widget
 import android.content.Context
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.unit.DpSize
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.glance.GlanceId
@@ -42,9 +41,8 @@ import java.util.Date
 import java.util.Locale
 
 class DopaWidget : GlanceAppWidget() {
-    override val sizeMode = SizeMode.Responsive(
-        setOf(DpSize(110.dp, 110.dp), DpSize(250.dp, 110.dp), DpSize(250.dp, 180.dp)),
-    )
+    // Exact: LocalSize is the real widget size, so the bitmap matches it and nothing gets cropped.
+    override val sizeMode = SizeMode.Exact
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
         val store = SettingsStore(context)

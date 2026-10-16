@@ -16,6 +16,8 @@ import jp.dopaccess.widget.data.Spot
 import jp.dopaccess.widget.data.Tier
 import java.util.Random
 import kotlin.math.ceil
+import kotlin.math.abs
+import kotlin.math.ln
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.roundToInt
@@ -30,15 +32,21 @@ object MapRenderer {
     private const val SEA = 0xFF1C3A62.toInt()
     private const val TILE = 16
 
-    private var map: Bitmap? = null
+    private val MAP_RES = intArrayOf(R.drawable.jp_map_0, R.drawable.jp_map_1, R.drawable.jp_map_2, R.drawable.jp_map_3)
+    private val maps = arrayOfNulls<Bitmap>(MAP_RES.size)
     private var people: Bitmap? = null
+    private var res: android.content.res.Resources? = null
 
     private fun load(ctx: Context) {
-        if (map != null && people != null) return
-        val o = BitmapFactory.Options().apply { inScaled = false }
-        map = BitmapFactory.decodeResource(ctx.resources, R.drawable.jp_map, o)
-        people = BitmapFactory.decodeResource(ctx.resources, R.drawable.people, o)
+        res = ctx.resources
+        if (people != null) return
+        people = BitmapFactory.decodeResource(ctx.resources, R.drawable.people, BitmapFactory.Options().apply { inScaled = false })
     }
+
+    private fun map(v: Int): Bitmap = maps[v] ?: BitmapFactory.decodeResource(res, MAP_RES[v], BitmapFactory.Options().apply { inScaled = false }).also { maps[v] = it }
+
+    /** The map variant whose shape is closest to the widget's, so land fills it edge to edge. */
+    fun variantFor(aspect: Float): Int = MapData.HS.indices.minByOrNull { abs(ln(MapData.W.toFloat() / MapData.HS[it] / aspect)) }!!
 
     fun render(ctx: Context, widthPx: Int, heightPx: Int, r: RealtimeResponse?, faded: Boolean, mild: Boolean): Bitmap {
         load(ctx)
@@ -50,14 +58,16 @@ object MapRenderer {
     }
 
     private fun draw(widthPx: Int, heightPx: Int, r: RealtimeResponse?, faded: Boolean, mild: Boolean, maxEdge: Int): Bitmap {
-        val base = map!!
         val sheet = people!!
         val aspect = max(1, widthPx).toFloat() / max(1, heightPx)
-        // Low-res canvas with the widget's aspect ratio; the map keeps its own shape inside it.
-        val lw = max(MapData.W, (MapData.H * aspect).roundToInt())
-        val lh = max(MapData.H, (MapData.W / aspect).roundToInt())
+        val v = variantFor(aspect)
+        val base = map(v)
+        val mh = MapData.HS[v]
+        // Low-res canvas with the widget's aspect ratio; any small leftover becomes sea.
+        val lw = max(MapData.W, (mh * aspect).roundToInt())
+        val lh = max(mh, (MapData.W / aspect).roundToInt())
         val ox = (lw - MapData.W) / 2
-        val oy = lh - MapData.H // extra sea goes on top, where the count sits
+        val oy = lh - mh
 
         val low = Bitmap.createBitmap(lw, lh, Bitmap.Config.ARGB_8888)
         val c = Canvas(low)
@@ -81,8 +91,8 @@ object MapRenderer {
             if (f.pref == -1) {
                 Placed((box.left + 10 + rnd.nextFloat() * (box.width() - 20)).toInt(), (box.bottom - 2).toInt(), f)
             } else {
-                val ax = ox + MapData.prefX[f.pref - 1]
-                val ay = oy + MapData.prefY[f.pref - 1]
+                val ax = ox + MapData.prefX[v][f.pref - 1]
+                val ay = oy + MapData.prefY[v][f.pref - 1]
                 Placed((ax + rnd.nextGaussian() * 3).toInt(), (ay + rnd.nextGaussian() * 2 + 4).toInt(), f)
             }
         }.sortedBy { it.y }
