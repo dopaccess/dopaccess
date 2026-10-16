@@ -25,6 +25,7 @@ import androidx.glance.appwidget.provideContent
 import androidx.glance.layout.Alignment
 import androidx.glance.layout.Box
 import androidx.glance.layout.Column
+import androidx.glance.layout.Row
 import androidx.glance.layout.ContentScale
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.padding
@@ -47,40 +48,51 @@ class DopaWidget : GlanceAppWidget() {
     )
 
     override suspend fun provideGlance(context: Context, id: GlanceId) {
-        val snap = SettingsStore(context).snapshot()
-        provideContent { Content(snap) }
+        val store = SettingsStore(context)
+        val snap = store.snapshot()
+        val mild = store.settings().mild
+        provideContent { Content(snap, mild) }
     }
 
     @Composable
-    private fun Content(snap: Snapshot) {
+    private fun Content(snap: Snapshot, mild: Boolean) {
         val ctx = LocalContext.current
         val size = LocalSize.current
         val density = ctx.resources.displayMetrics.density
         val dark = (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val r = snap.response
         val faded = r?.stale == true || snap.error != null
-        val bmp = CrowdRenderer.render((size.width.value * density).toInt(), (size.height.value * density).toInt(), r, dark, faded)
-        val white = ColorProvider(Color.White)
+        val bmp = CrowdRenderer.render((size.width.value * density).toInt(), (size.height.value * density).toInt(), r, dark, faded, mild)
         val time = if (snap.updatedAtMs > 0) SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(snap.updatedAtMs)) else "--:--"
         val tier = r?.let { Tier.parse(it.tier) } ?: Tier.ERROR
+        val fg = ColorProvider(if (CrowdRenderer.lightSky(tier, dark)) Color(0xFF102030) else Color.White)
+        val countSp = if (size.height >= 160.dp) 56.sp else 44.sp
 
-        Box(modifier = GlanceModifier.fillMaxSize().clickable(actionStartActivity<SettingsActivity>())) {
+        Box(modifier = GlanceModifier.fillMaxSize().clickable(actionRunCallback<RefreshAction>())) {
             Image(
                 provider = ImageProvider(bmp),
                 contentDescription = tier.name,
                 contentScale = ContentScale.Crop,
                 modifier = GlanceModifier.fillMaxSize(),
             )
-            Column(modifier = GlanceModifier.fillMaxSize().padding(8.dp)) {
-                Text(label(tier), style = TextStyle(color = white, fontWeight = FontWeight.Bold, fontSize = 14.sp))
+            // The count is the one thing that must read at a glance, so it gets the biggest type.
+            Row(modifier = GlanceModifier.padding(start = 10.dp, top = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    if (r != null) "${r.current} 人 · $time" else (snap.error ?: "未設定"),
-                    style = TextStyle(color = white, fontSize = 12.sp),
+                    r?.current?.toString() ?: "--",
+                    style = TextStyle(color = fg, fontWeight = FontWeight.Bold, fontSize = countSp),
                 )
+                Column(modifier = GlanceModifier.padding(start = 6.dp)) {
+                    Text(label(tier), style = TextStyle(color = fg, fontWeight = FontWeight.Bold, fontSize = 13.sp))
+                    Text(
+                        if (r != null) "人 · $time" else (snap.error ?: "未設定"),
+                        style = TextStyle(color = fg, fontSize = 11.sp),
+                        maxLines = 1,
+                    )
+                }
             }
             Box(modifier = GlanceModifier.fillMaxSize().padding(6.dp), contentAlignment = Alignment.TopEnd) {
-                Text("↻", style = TextStyle(color = white, fontSize = 18.sp),
-                    modifier = GlanceModifier.clickable(actionRunCallback<RefreshAction>()))
+                Text("⚙", style = TextStyle(color = fg, fontSize = 18.sp),
+                    modifier = GlanceModifier.clickable(actionStartActivity<SettingsActivity>()))
             }
         }
     }

@@ -1,6 +1,7 @@
 package jp.dopaccess.widget.data
 
 import android.content.Context
+import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.intPreferencesKey
 import androidx.datastore.preferences.core.longPreferencesKey
@@ -10,7 +11,16 @@ import kotlinx.coroutines.flow.first
 
 private val Context.store by preferencesDataStore("dopaccess")
 
-data class Settings(val workerUrl: String, val apiSecret: String?, val property: String, val intervalMin: Int)
+data class Settings(
+    val workerUrl: String,
+    val apiSecret: String?,
+    val property: String,
+    val intervalMin: Int,
+    /** absolute = crowd size follows raw user count instead of the usual-for-this-hour baseline. */
+    val absoluteScale: Boolean = false,
+    /** mild = gentler visuals (KYOMU naps instead of collapsing). */
+    val mild: Boolean = false,
+)
 
 data class Snapshot(val response: RealtimeResponse?, val error: String?, val updatedAtMs: Long)
 
@@ -20,6 +30,8 @@ class SettingsStore(private val ctx: Context) {
         val secret = stringPreferencesKey("api_secret_enc")
         val property = stringPreferencesKey("property")
         val interval = intPreferencesKey("interval_min")
+        val absolute = booleanPreferencesKey("absolute_scale")
+        val mild = booleanPreferencesKey("mild")
         val lastJson = stringPreferencesKey("last_json")
         val lastError = stringPreferencesKey("last_error")
         val lastAt = longPreferencesKey("last_at")
@@ -33,15 +45,19 @@ class SettingsStore(private val ctx: Context) {
             apiSecret = p[K.secret]?.let(SecretCrypto::decrypt),
             property = p[K.property].orEmpty(),
             intervalMin = p[K.interval] ?: 30,
+            absoluteScale = p[K.absolute] ?: false,
+            mild = p[K.mild] ?: false,
         )
     }
 
-    suspend fun save(url: String, secret: String?, property: String, intervalMin: Int) {
+    suspend fun save(url: String, secret: String?, property: String, intervalMin: Int, absoluteScale: Boolean, mild: Boolean) {
         ctx.store.edit {
             it[K.url] = url.trim().trimEnd('/')
             if (!secret.isNullOrBlank()) it[K.secret] = SecretCrypto.encrypt(secret.trim())
             it[K.property] = property.trim()
             it[K.interval] = intervalMin
+            it[K.absolute] = absoluteScale
+            it[K.mild] = mild
         }
     }
 

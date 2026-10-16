@@ -18,6 +18,8 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.ui.Alignment
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
@@ -60,11 +62,14 @@ class SettingsActivity : ComponentActivity() {
         var hasSecret by remember { mutableStateOf(false) }
         var property by remember { mutableStateOf("") }
         var interval by remember { mutableIntStateOf(30) }
+        var absolute by remember { mutableStateOf(false) }
+        var mild by remember { mutableStateOf(false) }
         var status by remember { mutableStateOf("") }
 
         LaunchedEffect(Unit) {
             val s = store.settings()
             url = s.workerUrl; property = s.property; interval = s.intervalMin; hasSecret = s.apiSecret != null
+            absolute = s.absoluteScale; mild = s.mild
         }
 
         Column(
@@ -87,12 +92,15 @@ class SettingsActivity : ComponentActivity() {
                     FilterChip(selected = interval == m, onClick = { interval = m }, label = { Text("${m}分") })
                 }
             }
+            ToggleRow("人数そのままの規模で表示（オフ：いつもの同じ時間帯と比べて表示）", absolute) { absolute = it }
+            ToggleRow("マイルド演出（虚無のときに倒れずお昼寝）", mild) { mild = it }
+            Text("ウィジェットをタップすると更新、右上の歯車でこの画面が開きます。")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 OutlinedButton(onClick = {
                     scope.launch {
                         status = "接続中…"
                         val cur = store.settings()
-                        val s = Settings(url.trim().trimEnd('/'), secret.ifBlank { null } ?: cur.apiSecret, property.trim(), interval)
+                        val s = Settings(url.trim().trimEnd('/'), secret.ifBlank { null } ?: cur.apiSecret, property.trim(), interval, absolute, mild)
                         status = when (val r = DopaClient(s).realtime()) {
                             is DopaClient.Result.Ok -> "OK: ${r.body.current} 人 / ${r.body.tier}"
                             is DopaClient.Result.Fail -> "失敗: ${r.message}"
@@ -101,7 +109,7 @@ class SettingsActivity : ComponentActivity() {
                 }) { Text("接続テスト") }
                 Button(onClick = {
                     scope.launch {
-                        store.save(url, secret, property, interval)
+                        store.save(url, secret, property, interval, absolute, mild)
                         if (secret.isNotBlank()) hasSecret = true
                         secret = ""
                         RefreshWorker.schedule(applicationContext, interval)
@@ -112,6 +120,14 @@ class SettingsActivity : ComponentActivity() {
                 }) { Text("保存") }
             }
             if (status.isNotEmpty()) Text(status)
+        }
+    }
+
+    @androidx.compose.runtime.Composable
+    private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text(label, Modifier.weight(1f))
+            Switch(checked = checked, onCheckedChange = onChange)
         }
     }
 }

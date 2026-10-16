@@ -15,7 +15,11 @@ class DopaClient(private val settings: Settings) {
     suspend fun realtime(): Result = withContext(Dispatchers.IO) {
         if (!settings.workerUrl.startsWith("https://")) return@withContext Result.Fail("Worker URL must start with https://")
         val secret = settings.apiSecret ?: return@withContext Result.Fail("API secret is not set")
-        val q = if (settings.property.isBlank()) "" else "?property=" + URLEncoder.encode(settings.property, "UTF-8")
+        val params = buildList {
+            if (settings.property.isNotBlank()) add("property=" + URLEncoder.encode(settings.property, "UTF-8"))
+            if (settings.absoluteScale) add("scale=absolute")
+        }
+        val q = if (params.isEmpty()) "" else "?" + params.joinToString("&")
         val conn = URL("${settings.workerUrl}/api/realtime$q").openConnection() as HttpURLConnection
         try {
             conn.connectTimeout = 10_000

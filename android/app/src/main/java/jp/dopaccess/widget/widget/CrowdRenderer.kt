@@ -32,18 +32,22 @@ object CrowdRenderer {
     }
 
     /** faded = stale or last fetch failed: wash the picture out so it reads as old. */
-    fun render(widthPx: Int, heightPx: Int, r: RealtimeResponse?, dark: Boolean, faded: Boolean = false): Bitmap {
+    /** True when the sky is pale enough that text on it should be dark. */
+    fun lightSky(tier: Tier, dark: Boolean): Boolean =
+        !dark && tier in setOf(Tier.KANKOTORI, Tier.NORMAL, Tier.WAKUWAKU)
+
+    fun render(widthPx: Int, heightPx: Int, r: RealtimeResponse?, dark: Boolean, faded: Boolean = false, mild: Boolean = false): Bitmap {
         val s = min(1f, MAX_EDGE.toFloat() / max(widthPx, heightPx))
         val w = max(1, (widthPx * s).toInt())
         val h = max(1, (heightPx * s).toInt())
         return try {
-            draw(w, h, r, dark, faded)
+            draw(w, h, r, dark, faded, mild)
         } catch (e: OutOfMemoryError) {
-            draw(w / 2, h / 2, r, dark, faded)
+            draw(w / 2, h / 2, r, dark, faded, mild)
         }
     }
 
-    private fun draw(w: Int, h: Int, r: RealtimeResponse?, dark: Boolean, faded: Boolean): Bitmap {
+    private fun draw(w: Int, h: Int, r: RealtimeResponse?, dark: Boolean, faded: Boolean, mild: Boolean): Bitmap {
         val tier = if (r == null) Tier.ERROR else Tier.parse(r.tier)
         val pal = palette(tier, dark)
         val bmp = Bitmap.createBitmap(w, h, Bitmap.Config.ARGB_8888)
@@ -56,8 +60,8 @@ object CrowdRenderer {
 
         if (tier == Tier.GOD_BURST) drawRays(c, w, h, p)
 
-        // Sky only needs room for the tier label; the crowd gets the rest.
-        val groundTop = h * 0.36f
+        // The sky holds the big count; the crowd gets the rest.
+        val groundTop = h * 0.46f
         p.color = pal.ground
         c.drawRect(0f, groundTop, w.toFloat(), h.toFloat(), p)
 
@@ -78,7 +82,7 @@ object CrowdRenderer {
                 val maxFoot = h - bottomPad
                 val footY = if (maxFoot > minFoot) minFoot + (maxFoot - minFoot) * f.y else maxFoot
                 val x = (size * 0.3f) + (w - size * 0.6f) * f.x
-                val pose = if (tier == Tier.KYOMU) -2 else f.pose
+                val pose = if (tier == Tier.KYOMU) (if (mild) -3 else -2) else f.pose
                 drawFigure(c, p, x, footY, size, pose, pal.people[f.color])
             }
         }
@@ -108,6 +112,12 @@ object CrowdRenderer {
         p.strokeCap = Paint.Cap.ROUND
         p.strokeWidth = size * 0.14f
         val head = size * 0.16f
+        if (pose == -3) {
+            // Mild mode: curled up napping instead of collapsed.
+            c.drawOval(x - size * 0.3f, footY - size * 0.22f, x + size * 0.2f, footY, p)
+            c.drawCircle(x + size * 0.28f, footY - size * 0.12f, head, p)
+            return
+        }
         if (pose == -2) {
             c.drawLine(x - size * 0.35f, footY, x + size * 0.25f, footY, p)
             c.drawCircle(x + size * 0.4f, footY - head * 0.3f, head, p)
