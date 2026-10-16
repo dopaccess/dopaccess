@@ -53,9 +53,9 @@ class DopaWidget : GlanceAppWidget() {
     @Composable
     private fun Content(snap: Snapshot) {
         val size = LocalSize.current
-        val r = snap.response
-        val faded = r?.stale == true || snap.error != null
-        val time = if (snap.updatedAtMs > 0) SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(snap.updatedAtMs)) else "--:--"
+        val r = snap.reading
+        val faded = snap.error != null
+        val time = r?.let { SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(it.fetchedAtMs)) } ?: "--:--"
         // Stale or failed: grey the text out so old numbers don't pass for live ones.
         val fg = ColorProvider(if (faded) Color(0xFF9AA3B0) else Color.White)
         val sub = ColorProvider(if (faded) Color(0xFF7D8590) else Color(0xFFC9D3E0))
@@ -68,16 +68,16 @@ class DopaWidget : GlanceAppWidget() {
             // The count is the one thing that must read at a glance, so it gets the biggest type.
             Row(modifier = GlanceModifier.padding(start = 12.dp, top = 6.dp), verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    r?.current?.toString() ?: "--",
+                    r?.total?.toString() ?: "--",
                     style = TextStyle(color = fg, fontWeight = FontWeight.Bold, fontSize = countSp),
                 )
                 Column(modifier = GlanceModifier.padding(start = 8.dp)) {
                     Text(
-                        if (r != null) "人 · $time" else (snap.error ?: "未設定"),
+                        if (r != null) "人 · $time" + (snap.error?.let { " · $it" } ?: "") else (snap.error ?: "⚙で設定"),
                         style = TextStyle(color = sub, fontSize = 12.sp),
                         maxLines = 1,
                     )
-                    r?.geo?.let { g ->
+                    r?.let { g ->
                         Text(
                             "💻 ${g.desktop}  📱 ${g.mobile}",
                             style = TextStyle(color = fg, fontWeight = FontWeight.Bold, fontSize = 14.sp),

@@ -2,7 +2,12 @@ package jp.dopaccess.widget.ui
 
 import android.os.Bundle
 import androidx.activity.ComponentActivity
+import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.compose.setContent
+import androidx.activity.result.IntentSenderRequest
+import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -10,20 +15,17 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
-import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material3.Button
 import androidx.compose.material3.FilterChip
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Surface
-import androidx.compose.material3.Switch
-import androidx.compose.ui.Alignment
 import androidx.compose.material3.Text
 import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableIntStateOf
@@ -31,13 +33,14 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.glance.appwidget.updateAll
-import jp.dopaccess.widget.data.DopaClient
-import jp.dopaccess.widget.data.Settings
+import jp.dopaccess.widget.data.Fetcher
+import jp.dopaccess.widget.data.Ga4
+import jp.dopaccess.widget.data.GoogleAuth
+import jp.dopaccess.widget.data.Property
 import jp.dopaccess.widget.data.SettingsStore
 import jp.dopaccess.widget.widget.DopaWidget
 import jp.dopaccess.widget.work.RefreshWorker
@@ -54,22 +57,50 @@ class SettingsActivity : ComponentActivity() {
         }
     }
 
-    @androidx.compose.runtime.Composable
+    @Composable
     private fun Screen(store: SettingsStore) {
         val scope = rememberCoroutineScope()
-        var url by remember { mutableStateOf("") }
-        var secret by remember { mutableStateOf("") }
-        var hasSecret by remember { mutableStateOf(false) }
-        var property by remember { mutableStateOf("") }
+        var properties by remember { mutableStateOf<List<Property>>(emptyList()) }
+        var selected by remember { mutableStateOf<Property?>(null) }
+        var savedName by remember { mutableStateOf("") }
         var interval by remember { mutableIntStateOf(30) }
-        var absolute by remember { mutableStateOf(false) }
-        var mild by remember { mutableStateOf(false) }
         var status by remember { mutableStateOf("") }
+
+        fun loadProperties(token: String) = scope.launch {
+            status = "サイト一覧を読み込み中…"
+            status = try {
+                properties = Ga4(token).properties()
+                selected = properties.firstOrNull { it.id == store.settings().propertyId } ?: selected
+                if (properties.isEmpty()) "見られるGA4プロパティがありません" else ""
+            } catch (e: Ga4.HttpError) {
+                if (e.code == 403) "GA4 Admin API が無効か、権限がありません" else "読み込み失敗: HTTP ${e.code}"
+            } catch (e: Exception) {
+                "読み込み失敗: ${e.javaClass.simpleName}"
+            }
+        }
+
+        val consent = rememberLauncherForActivityResult(ActivityResultContracts.StartIntentSenderForResult()) { res ->
+            when (val t = GoogleAuth.fromIntent(applicationContext, res.data)) {
+                is GoogleAuth.Token.Ok -> loadProperties(t.accessToken)
+                is GoogleAuth.Token.NeedsConsent -> status = "許可されませんでした"
+                is GoogleAuth.Token.Fail -> status = "ログイン失敗: ${t.message}"
+            }
+        }
+
+        fun signIn() = scope.launch {
+            status = "ログイン中…"
+            when (val t = GoogleAuth.token(applicationContext)) {
+                is GoogleAuth.Token.Ok -> loadProperties(t.accessToken)
+                is GoogleAuth.Token.NeedsConsent -> consent.launch(IntentSenderRequest.Builder(t.intent.intentSender).build())
+                is GoogleAuth.Token.Fail -> status = "ログイン失敗: ${t.message}"
+            }
+        }
 
         LaunchedEffect(Unit) {
             val s = store.settings()
-            url = s.workerUrl; property = s.property; interval = s.intervalMin; hasSecret = s.apiSecret != null
-            absolute = s.absoluteScale; mild = s.mild
+            interval = s.intervalMin
+            savedName = s.propertyName
+            if (s.propertyId.isNotBlank()) selected = Property(s.propertyId, s.propertyName, "")
         }
 
         Column(
@@ -77,57 +108,53 @@ class SettingsActivity : ComponentActivity() {
             verticalArrangement = Arrangement.spacedBy(12.dp),
         ) {
             Text("Dopaccess", style = MaterialTheme.typography.headlineMedium)
-            OutlinedTextField(url, { url = it }, label = { Text("Worker URL") },
-                placeholder = { Text("https://dopaccess.example.workers.dev") }, singleLine = true,
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri), modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(secret, { secret = it },
-                label = { Text(if (hasSecret) "API secret（保存済み・変更時のみ入力）" else "API secret") },
-                singleLine = true, visualTransformation = PasswordVisualTransformation(), modifier = Modifier.fillMaxWidth())
-            OutlinedTextField(property, { property = it }, label = { Text("GA4 プロパティ ID（空なら既定）") },
-                singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Number),
-                modifier = Modifier.fillMaxWidth())
+            Text(
+                "Googleアカウントでログインして、表示するサイトを選んでください。データはこのスマホがGoogleから直接読み取るだけで、ほかのサーバーには送りません。",
+                style = MaterialTheme.typography.bodyMedium,
+            )
+            OutlinedButton(onClick = { signIn() }) {
+                Text(if (properties.isEmpty()) "Googleでログインしてサイトを選ぶ" else "サイト一覧を再読み込み")
+            }
+            if (properties.isEmpty() && savedName.isNotBlank()) Text("表示中のサイト: $savedName")
+            properties.forEach { p ->
+                Row(
+                    Modifier.fillMaxWidth().clickable { selected = p },
+                    verticalAlignment = Alignment.CenterVertically,
+                ) {
+                    RadioButton(selected = selected?.id == p.id, onClick = { selected = p })
+                    Column {
+                        Text(p.name)
+                        Text("${p.account} · ${p.id}", style = MaterialTheme.typography.bodySmall)
+                    }
+                }
+            }
             Text("自動更新の間隔（Android の省電力で遅れることがあります）")
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 listOf(15, 30, 60).forEach { m ->
                     FilterChip(selected = interval == m, onClick = { interval = m }, label = { Text("${m}分") })
                 }
             }
-            ToggleRow("人数そのままの規模で表示（オフ：いつもの同じ時間帯と比べて表示）", absolute) { absolute = it }
-            ToggleRow("マイルド演出（虚無のときに倒れずお昼寝）", mild) { mild = it }
             Text("ウィジェットをタップすると更新、右上の歯車でこの画面が開きます。")
-            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                OutlinedButton(onClick = {
-                    scope.launch {
-                        status = "接続中…"
-                        val cur = store.settings()
-                        val s = Settings(url.trim().trimEnd('/'), secret.ifBlank { null } ?: cur.apiSecret, property.trim(), interval, absolute, mild)
-                        status = when (val r = DopaClient(s).realtime()) {
-                            is DopaClient.Result.Ok -> "OK: ${r.body.current} 人 / ${r.body.tier}"
-                            is DopaClient.Result.Fail -> "失敗: ${r.message}"
-                        }
+            Button(enabled = selected != null, onClick = {
+                scope.launch {
+                    val p = selected ?: return@launch
+                    store.save(p, interval)
+                    savedName = p.name
+                    status = "保存しました。取得中…"
+                    val r = Fetcher.fetch(applicationContext, p.id)
+                    when (r) {
+                        is Fetcher.Result.Ok -> store.saveResult(r.reading, null)
+                        is Fetcher.Result.Fail -> store.saveResult(null, r.message)
                     }
-                }) { Text("接続テスト") }
-                Button(onClick = {
-                    scope.launch {
-                        store.save(url, secret, property, interval, absolute, mild)
-                        if (secret.isNotBlank()) hasSecret = true
-                        secret = ""
-                        RefreshWorker.schedule(applicationContext, interval)
-                        RefreshWorker.refreshNow(applicationContext)
-                        DopaWidget().updateAll(applicationContext)
-                        status = "保存しました"
+                    RefreshWorker.schedule(applicationContext, interval)
+                    DopaWidget().updateAll(applicationContext)
+                    status = when (r) {
+                        is Fetcher.Result.Ok -> "保存しました: いま ${r.reading.total} 人（PC ${r.reading.desktop} / スマホ ${r.reading.mobile}）"
+                        is Fetcher.Result.Fail -> "保存しましたが取得に失敗: ${r.message}"
                     }
-                }) { Text("保存") }
-            }
+                }
+            }) { Text("保存") }
             if (status.isNotEmpty()) Text(status)
-        }
-    }
-
-    @androidx.compose.runtime.Composable
-    private fun ToggleRow(label: String, checked: Boolean, onChange: (Boolean) -> Unit) {
-        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-            Text(label, Modifier.weight(1f))
-            Switch(checked = checked, onCheckedChange = onChange)
         }
     }
 }

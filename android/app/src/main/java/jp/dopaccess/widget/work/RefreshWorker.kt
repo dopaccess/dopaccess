@@ -11,7 +11,7 @@ import androidx.work.OneTimeWorkRequestBuilder
 import androidx.work.PeriodicWorkRequestBuilder
 import androidx.work.WorkManager
 import androidx.work.WorkerParameters
-import jp.dopaccess.widget.data.DopaClient
+import jp.dopaccess.widget.data.Fetcher
 import jp.dopaccess.widget.data.SettingsStore
 import jp.dopaccess.widget.widget.DopaWidget
 import java.util.concurrent.TimeUnit
@@ -19,9 +19,9 @@ import java.util.concurrent.TimeUnit
 class RefreshWorker(ctx: Context, params: WorkerParameters) : CoroutineWorker(ctx, params) {
     override suspend fun doWork(): Result {
         val store = SettingsStore(applicationContext)
-        when (val r = DopaClient(store.settings()).realtime()) {
-            is DopaClient.Result.Ok -> store.saveResult(r.body, null)
-            is DopaClient.Result.Fail -> store.saveResult(null, r.message)
+        when (val r = Fetcher.fetch(applicationContext, store.settings().propertyId)) {
+            is Fetcher.Result.Ok -> store.saveResult(r.reading, null)
+            is Fetcher.Result.Fail -> store.saveResult(null, r.message)
         }
         DopaWidget().updateAll(applicationContext)
         return Result.success()
