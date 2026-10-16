@@ -73,14 +73,14 @@ class DopaWidget : GlanceAppWidget() {
             )
             Column(modifier = GlanceModifier.fillMaxSize().padding(8.dp)) {
                 Text(label(tier), style = TextStyle(color = white, fontWeight = FontWeight.Bold, fontSize = 14.sp))
-                Text(if (r != null) "${r.current} 人" else (snap.error ?: "未設定"), style = TextStyle(color = white, fontSize = 12.sp))
+                Text(
+                    if (r != null) "${r.current} 人 · $time" else (snap.error ?: "未設定"),
+                    style = TextStyle(color = white, fontSize = 12.sp),
+                )
             }
             Box(modifier = GlanceModifier.fillMaxSize().padding(6.dp), contentAlignment = Alignment.TopEnd) {
                 Text("↻", style = TextStyle(color = white, fontSize = 18.sp),
                     modifier = GlanceModifier.clickable(actionRunCallback<RefreshAction>()))
-            }
-            Box(modifier = GlanceModifier.fillMaxSize().padding(6.dp), contentAlignment = Alignment.BottomEnd) {
-                Text(time, style = TextStyle(color = white, fontSize = 10.sp))
             }
         }
     }

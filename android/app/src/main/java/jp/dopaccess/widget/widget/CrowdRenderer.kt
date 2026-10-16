@@ -12,6 +12,7 @@ import kotlin.math.cos
 import kotlin.math.max
 import kotlin.math.min
 import kotlin.math.sin
+import kotlin.math.sqrt
 
 /** Draws the widget picture. Placeholder vector figures until real sprites land. */
 object CrowdRenderer {
@@ -55,22 +56,31 @@ object CrowdRenderer {
 
         if (tier == Tier.GOD_BURST) drawRays(c, w, h, p)
 
-        val groundTop = h * 0.45f
+        // Sky only needs room for the tier label; the crowd gets the rest.
+        val groundTop = h * 0.36f
         p.color = pal.ground
         c.drawRect(0f, groundTop, w.toFloat(), h.toFloat(), p)
 
         if (r == null) {
-            drawFigure(c, p, w * 0.5f, h * 0.8f, h * 0.18f, pose = -1, color = pal.people[0])
-            return bmp
-        }
-
-        val seed = r.fetchedAt.hashCode().toLong()
-        val unitH = h * 0.12f
-        for (f in CrowdLayout.place(r.crowd.walkers, r.crowd.giants, tier, seed)) {
-            val y = groundTop + (h - groundTop) * (0.15f + 0.8f * f.y)
-            val depth = 0.7f + 0.5f * f.y
-            val pose = if (tier == Tier.KYOMU) -2 else f.pose
-            drawFigure(c, p, f.x * w, y, unitH * f.scale * depth, pose, pal.people[f.color])
+            drawFigure(c, p, w * 0.5f, h * 0.85f, h * 0.3f, pose = -1, color = pal.people[0])
+        } else {
+            val band = h - groundTop
+            val bottomPad = h * 0.07f
+            val n = max(1, r.crowd.walkers + r.crowd.giants * 4)
+            // Size figures from the space each one gets, so a wide widget isn't sparse.
+            val unit = (sqrt(w * band / n) * 0.85f).coerceIn(h * 0.16f, h * 0.34f)
+            val seed = r.fetchedAt.hashCode().toLong()
+            for (f in CrowdLayout.place(r.crowd.walkers, r.crowd.giants, tier, seed)) {
+                val depth = 0.75f + 0.35f * f.y
+                val size = min(unit * f.scale * depth, band * 0.95f)
+                // Feet stay inside the ground band; heads may overlap the horizon a little.
+                val minFoot = groundTop + size * 0.45f
+                val maxFoot = h - bottomPad
+                val footY = if (maxFoot > minFoot) minFoot + (maxFoot - minFoot) * f.y else maxFoot
+                val x = (size * 0.3f) + (w - size * 0.6f) * f.x
+                val pose = if (tier == Tier.KYOMU) -2 else f.pose
+                drawFigure(c, p, x, footY, size, pose, pal.people[f.color])
+            }
         }
         if (faded) {
             p.color = 0x88808080.toInt()
