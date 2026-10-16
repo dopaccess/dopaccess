@@ -22,7 +22,8 @@ data class Settings(
     val mild: Boolean = false,
 )
 
-data class Snapshot(val response: RealtimeResponse?, val error: String?, val updatedAtMs: Long)
+/** refreshing = a tap-triggered fetch is in flight (shown as a spinner). */
+data class Snapshot(val response: RealtimeResponse?, val error: String?, val updatedAtMs: Long, val refreshing: Boolean = false)
 
 class SettingsStore(private val ctx: Context) {
     private object K {
@@ -36,6 +37,7 @@ class SettingsStore(private val ctx: Context) {
         val lastError = stringPreferencesKey("last_error")
         val lastAt = longPreferencesKey("last_at")
         val lastManual = longPreferencesKey("last_manual")
+        val refreshingAt = longPreferencesKey("refreshing_at")
     }
 
     suspend fun settings(): Settings {
@@ -64,11 +66,14 @@ class SettingsStore(private val ctx: Context) {
     suspend fun snapshot(): Snapshot {
         val p = ctx.store.data.first()
         val r = p[K.lastJson]?.let { runCatching { ApiJson.decodeFromString<RealtimeResponse>(it) }.getOrNull() }
-        return Snapshot(r, p[K.lastError], p[K.lastAt] ?: 0L)
+        // Give up on the spinner after a minute in case the fetch never ran (e.g. offline).
+        val refreshing = System.currentTimeMillis() - (p[K.refreshingAt] ?: 0L) < 60_000
+        return Snapshot(r, p[K.lastError], p[K.lastAt] ?: 0L, refreshing)
     }
 
     suspend fun saveResult(r: RealtimeResponse?, error: String?) {
         ctx.store.edit {
+            it.remove(K.refreshingAt)
             if (r != null) {
                 it[K.lastJson] = ApiJson.encodeToString(RealtimeResponse.serializer(), r)
                 it[K.lastAt] = System.currentTimeMillis()
@@ -86,6 +91,7 @@ class SettingsStore(private val ctx: Context) {
         ctx.store.edit {
             if (now - (it[K.lastManual] ?: 0L) >= cooldownMs) {
                 it[K.lastManual] = now
+                it[K.refreshingAt] = now
                 ok = true
             }
         }

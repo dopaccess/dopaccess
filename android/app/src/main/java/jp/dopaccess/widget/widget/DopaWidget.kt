@@ -16,6 +16,7 @@ import androidx.glance.action.actionStartActivity
 import androidx.glance.action.clickable
 import androidx.glance.appwidget.GlanceAppWidget
 import androidx.glance.appwidget.GlanceAppWidgetReceiver
+import androidx.glance.appwidget.CircularProgressIndicator
 import androidx.glance.appwidget.SizeMode
 import androidx.glance.appwidget.action.ActionCallback
 import androidx.glance.appwidget.action.actionRunCallback
@@ -27,6 +28,7 @@ import androidx.glance.layout.Row
 import androidx.glance.layout.ContentScale
 import androidx.glance.layout.fillMaxSize
 import androidx.glance.layout.padding
+import androidx.glance.layout.size
 import androidx.glance.text.FontWeight
 import androidx.glance.text.Text
 import androidx.glance.text.TextStyle
@@ -58,10 +60,10 @@ class DopaWidget : GlanceAppWidget() {
         val density = ctx.resources.displayMetrics.density
         val r = snap.response
         val faded = r?.stale == true || snap.error != null
-        val bmp = MapRenderer.render(ctx, (size.width.value * density).toInt(), (size.height.value * density).toInt(), r, faded, mild)
+        val bmp = CrowdRenderer.render(ctx, (size.width.value * density).toInt(), (size.height.value * density).toInt(), r, faded, mild)
         val time = if (snap.updatedAtMs > 0) SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(snap.updatedAtMs)) else "--:--"
         val tier = r?.let { Tier.parse(it.tier) } ?: Tier.ERROR
-        val fg = ColorProvider(Color.White) // the map's sea is always dark
+        val fg = ColorProvider(Color.White) // the night sky is always dark
         val countSp = if (size.height >= 160.dp) 56.sp else 44.sp
 
         Box(modifier = GlanceModifier.fillMaxSize().clickable(actionRunCallback<RefreshAction>())) {
@@ -86,7 +88,7 @@ class DopaWidget : GlanceAppWidget() {
                     )
                     r?.geo?.let { g ->
                         Text(
-                            "📱 ${g.mobile}  💻 ${g.desktop}",
+                            "💻 ${g.desktop}  📱 ${g.mobile}",
                             style = TextStyle(color = fg, fontWeight = FontWeight.Bold, fontSize = 12.sp),
                             maxLines = 1,
                         )
@@ -94,8 +96,13 @@ class DopaWidget : GlanceAppWidget() {
                 }
             }
             Box(modifier = GlanceModifier.fillMaxSize().padding(6.dp), contentAlignment = Alignment.TopEnd) {
-                Text("⚙", style = TextStyle(color = fg, fontSize = 18.sp),
-                    modifier = GlanceModifier.clickable(actionStartActivity<SettingsActivity>()))
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    if (snap.refreshing) {
+                        CircularProgressIndicator(color = fg, modifier = GlanceModifier.size(18.dp).padding(end = 4.dp))
+                    }
+                    Text("⚙", style = TextStyle(color = fg, fontSize = 18.sp),
+                        modifier = GlanceModifier.clickable(actionStartActivity<SettingsActivity>()))
+                }
             }
         }
     }
@@ -113,7 +120,10 @@ class DopaWidget : GlanceAppWidget() {
 
 class RefreshAction : ActionCallback {
     override suspend fun onAction(context: Context, glanceId: GlanceId, parameters: ActionParameters) {
-        if (SettingsStore(context).tryManual()) RefreshWorker.refreshNow(context)
+        if (SettingsStore(context).tryManual()) {
+            DopaWidget().update(context, glanceId) // show the spinner right away
+            RefreshWorker.refreshNow(context)
+        }
     }
 }
 
