@@ -156,6 +156,24 @@ describe("/api/realtime", () => {
     expect(body.tier).toBe("NORMAL");
     expect(body.baseline).toBeNull();
   });
+
+  it("backs off baseline retries for 5 minutes after a failure", async () => {
+    const calls: string[] = [];
+    vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+      const url = String(input instanceof Request ? input.url : input);
+      calls.push(url);
+      if (url.includes(":runRealtimeReport"))
+        return Response.json({ rows: [{ metricValues: [{ value: "5" }] }] });
+      return new Response("nope", { status: 403 });
+    });
+    await call(req("/api/realtime"));
+    expect(await e.DOPA_KV.get("baselinefail:111")).toBe("1");
+    const before = calls.filter((u) => !u.includes(":runRealtimeReport")).length;
+    await e.DOPA_KV.delete("rt:111");
+    await call(req("/api/realtime"));
+    const after = calls.filter((u) => !u.includes(":runRealtimeReport")).length;
+    expect(after).toBe(before);
+  });
 });
 
 describe("/api/health and rebuild", () => {

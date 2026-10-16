@@ -44,10 +44,14 @@ export async function ensureBaseline(
 ): Promise<Baseline | null> {
   const b = await getBaseline(env, property);
   if (!b) {
+    // 失敗直後は毎リクエストで GA4 を叩かないよう 5 分待つ
+    const failKey = `baselinefail:${property}`;
+    if (await env.DOPA_KV.get(failKey)) return null;
     try {
       return await rebuildBaseline(env, property);
     } catch (e) {
       console.warn("baseline lazy init failed", String(e));
+      await env.DOPA_KV.put(failKey, "1", { expirationTtl: 300 });
       return null;
     }
   }
