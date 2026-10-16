@@ -2,6 +2,7 @@ import type { Baseline } from "./baseline";
 import { getBaseline, isStale, rebuildBaseline } from "./baseline";
 import { absoluteCrowd, relativeCrowd, type Crowd } from "./crowd";
 import type { Config, Env } from "./env";
+import { buildGeo, type Geo } from "./geo";
 import { GA4Client, type Quota } from "./ga4";
 import { decideTier, divergence, type Tier } from "./tier";
 import { isoInZone, zonedParts } from "./time";
@@ -19,10 +20,12 @@ export interface RealtimeResponse {
   fetchedAt: string;
   cached: boolean;
   stale?: boolean;
+  geo?: Geo;
 }
 
 interface CacheEntry {
   current: number;
+  geo?: Geo;
   fetchedAtMs: number;
   ttlSec: number;
 }
@@ -81,8 +84,15 @@ export async function getRealtime(
   } else {
     try {
       const ga = new GA4Client(env);
-      const { current, quota } = await ga.realtimeActiveUsers(property);
-      entry = { current, fetchedAtMs: now.getTime(), ttlSec: quotaTtl(cfg, quota) };
+      const [{ current, quota }, geo] = await Promise.all([
+        ga.realtimeActiveUsers(property),
+        // 地図は飾りなので失敗しても人数は返す
+        ga.realtimeGeoRows(property).then(buildGeo, (e) => {
+          console.warn("realtime geo failed", String(e));
+          return undefined;
+        }),
+      ]);
+      entry = { current, geo, fetchedAtMs: now.getTime(), ttlSec: quotaTtl(cfg, quota) };
       // stale 応答用に 1 日は残しておく（新鮮さは fetchedAtMs で判定）
       await env.DOPA_KV.put(cacheKey(property), JSON.stringify(entry), { expirationTtl: 86400 });
       console.log(`realtime ${property} current=${current}`);
@@ -125,6 +135,7 @@ export async function getRealtime(
     fetchedAt: isoInZone(new Date(entry.fetchedAtMs), tz),
     cached: fromCache,
   };
+  if (entry.geo) body.geo = entry.geo;
   if (stale) body.stale = true;
   return { status: 200, body };
 }

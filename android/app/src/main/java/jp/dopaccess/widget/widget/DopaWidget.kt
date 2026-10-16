@@ -1,7 +1,6 @@
 package jp.dopaccess.widget.widget
 
 import android.content.Context
-import android.content.res.Configuration
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.DpSize
@@ -59,13 +58,12 @@ class DopaWidget : GlanceAppWidget() {
         val ctx = LocalContext.current
         val size = LocalSize.current
         val density = ctx.resources.displayMetrics.density
-        val dark = (ctx.resources.configuration.uiMode and Configuration.UI_MODE_NIGHT_MASK) == Configuration.UI_MODE_NIGHT_YES
         val r = snap.response
         val faded = r?.stale == true || snap.error != null
-        val bmp = CrowdRenderer.render((size.width.value * density).toInt(), (size.height.value * density).toInt(), r, dark, faded, mild)
+        val bmp = MapRenderer.render(ctx, (size.width.value * density).toInt(), (size.height.value * density).toInt(), r, faded, mild)
         val time = if (snap.updatedAtMs > 0) SimpleDateFormat("HH:mm", Locale.getDefault()).format(Date(snap.updatedAtMs)) else "--:--"
         val tier = r?.let { Tier.parse(it.tier) } ?: Tier.ERROR
-        val fg = ColorProvider(if (CrowdRenderer.lightSky(tier, dark)) Color(0xFF102030) else Color.White)
+        val fg = ColorProvider(Color.White) // the map's sea is always dark
         val countSp = if (size.height >= 160.dp) 56.sp else 44.sp
 
         Box(modifier = GlanceModifier.fillMaxSize().clickable(actionRunCallback<RefreshAction>())) {
@@ -88,6 +86,13 @@ class DopaWidget : GlanceAppWidget() {
                         style = TextStyle(color = fg, fontSize = 11.sp),
                         maxLines = 1,
                     )
+                    r?.geo?.let { g ->
+                        Text(
+                            "📱 ${g.mobile}  💻 ${g.desktop}",
+                            style = TextStyle(color = fg, fontWeight = FontWeight.Bold, fontSize = 12.sp),
+                            maxLines = 1,
+                        )
+                    }
                 }
             }
             Box(modifier = GlanceModifier.fillMaxSize().padding(6.dp), contentAlignment = Alignment.TopEnd) {

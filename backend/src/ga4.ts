@@ -85,6 +85,29 @@ export class GA4Client {
     return { current, quota: body.propertyQuota?.tokensPerHour };
   }
 
+  /** 直近 30 分の activeUsers をデバイス × 国 × 市区町村で */
+  async realtimeGeoRows(
+    property: string,
+  ): Promise<{ device: string; countryId: string; cityId: string; users: number }[]> {
+    const body = await this.call<{
+      rows?: { dimensionValues: { value: string }[]; metricValues: { value: string }[] }[];
+    }>(`${DATA_API}/properties/${property}:runRealtimeReport`, {
+      method: "POST",
+      body: JSON.stringify({
+        dimensions: [{ name: "deviceCategory" }, { name: "countryId" }, { name: "cityId" }],
+        metrics: [{ name: "activeUsers" }],
+        minuteRanges: [{ startMinutesAgo: 29, endMinutesAgo: 0 }],
+        limit: 1000,
+      }),
+    });
+    return (body.rows ?? []).map((r) => ({
+      device: r.dimensionValues[0].value,
+      countryId: r.dimensionValues[1].value,
+      cityId: r.dimensionValues[2].value,
+      users: Number(r.metricValues[0].value),
+    }));
+  }
+
   /** 過去 28 日の date × hour ごとの activeUsers */
   async hourlyActiveUsers(
     property: string,

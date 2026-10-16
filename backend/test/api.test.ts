@@ -33,11 +33,19 @@ interface MockOpts {
 
 function mockGoogle(o: MockOpts) {
   const calls: string[] = [];
-  vi.stubGlobal("fetch", async (input: RequestInfo | URL) => {
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
     const url = String(input instanceof Request ? input.url : input);
     calls.push(url);
     if (url.includes(":runRealtimeReport")) {
       if (o.realtime === "fail") return new Response("boom", { status: 500 });
+      if (String(init?.body ?? "").includes("cityId"))
+        return Response.json({
+          rows: [
+            { dimensionValues: [{ value: "mobile" }, { value: "JP" }, { value: "1009540" }], metricValues: [{ value: "3" }] },
+            { dimensionValues: [{ value: "desktop" }, { value: "JP" }, { value: "1009280" }], metricValues: [{ value: "2" }] },
+            { dimensionValues: [{ value: "desktop" }, { value: "CN" }, { value: "1003641" }], metricValues: [{ value: "4" }] },
+          ],
+        });
       return Response.json({
         rows: [{ metricValues: [{ value: String(o.realtime ?? 0) }] }],
         propertyQuota: { tokensPerHour: { consumed: 10, remaining: 4990 } },
@@ -110,6 +118,19 @@ describe("/api/realtime", () => {
     expect(body.fetchedAt).toMatch(/\+09:00$/);
     expect(calls.some((u) => u.includes(":runReport"))).toBe(true);
     expect(await e.DOPA_KV.get("baseline:111")).not.toBeNull();
+  });
+
+  it("adds a device and prefecture breakdown", async () => {
+    mockGoogle({ realtime: 9, hourly: 20 });
+    const body = (await (await call(req("/api/realtime"))).json()) as Record<string, any>;
+    expect(body.geo.mobile).toBe(3);
+    expect(body.geo.desktop).toBe(6);
+    expect(body.geo.overseas).toBe(4);
+    expect(body.geo.spots).toEqual([
+      { pref: -1, device: "desktop", users: 4 },
+      { pref: 27, device: "mobile", users: 3 },
+      { pref: 13, device: "desktop", users: 2 },
+    ]);
   });
 
   it("serves from cache without hitting GA4 again", async () => {

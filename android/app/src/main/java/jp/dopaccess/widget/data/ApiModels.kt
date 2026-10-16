@@ -6,6 +6,13 @@ import kotlinx.serialization.json.Json
 @Serializable
 data class Crowd(val unit: Int, val walkers: Int, val giants: Int)
 
+/** pref: 1..47 = prefecture (JIS code), 0 = Japan but unknown place, -1 = overseas. */
+@Serializable
+data class Spot(val pref: Int, val device: String, val users: Int)
+
+@Serializable
+data class Geo(val mobile: Int = 0, val desktop: Int = 0, val overseas: Int = 0, val spots: List<Spot> = emptyList())
+
 @Serializable
 data class RealtimeResponse(
     val property: String,
@@ -18,6 +25,7 @@ data class RealtimeResponse(
     val fetchedAt: String,
     val cached: Boolean = false,
     val stale: Boolean = false,
+    val geo: Geo? = null,
 )
 
 val ApiJson = Json { ignoreUnknownKeys = true }
